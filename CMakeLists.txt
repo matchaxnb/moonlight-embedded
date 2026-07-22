@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.6)
-project(moonlight-embedded VERSION 2.7.1 LANGUAGES C)
+project(moonlight-embedded VERSION 2.8.0 LANGUAGES C)
 SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 SET(CMAKE_C_STANDARD 99)
 include(${CMAKE_ROOT}/Modules/GNUInstallDirs.cmake)
@@ -61,6 +61,9 @@ endif()
 
 set(VDPAU_ACCEL_FOUND FALSE)
 set(VA_ACCEL_FOUND FALSE)
+# "software" decoding means ffmpeg handles decode and SDL/X11 handles display.
+# On platforms with V4L2 stateful decoders (modern RPi, etc.) ffmpeg can still
+# use hardware acceleration transparently. The name is legacy.
 set(SOFTWARE_FOUND FALSE)
 
 if(AVCODEC_FOUND AND AVUTIL_FOUND)
@@ -100,7 +103,13 @@ if (HAVE_GETAUXVAL)
   list(APPEND MOONLIGHT_DEFINITIONS HAVE_GETAUXVAL)
 endif()
 
-check_c_source_compiles("int main(void) { return __builtin_cpu_supports(\"aes\"); }" HAVE_BICS_AES)
+check_c_source_compiles("
+#if defined(__has_builtin) && __has_builtin(__builtin_cpu_supports)
+int main(void) { return __builtin_cpu_supports(\"aes\"); }
+#else
+#error \"__builtin_cpu_supports not available\"
+#endif
+" HAVE_BICS_AES)
 if (HAVE_BICS_AES)
   list(APPEND MOONLIGHT_DEFINITIONS HAVE_BICS_AES)
 endif()
