@@ -25,3 +25,14 @@ Bugs can be reported to the [issue tracker](https://github.com/moonlight-stream/
 1. Fork us
 2. Write code
 3. Send Pull Requests
+
+
+## Architecture
+
+- `libgamestream/` -> glue code between moonlight-common-c and this app (for the gamestream protocol)
+- `src/ -> plug the streamed contents to I/O: audio, video, control... and platform-specific sinks
+- `scripts/` -> helpers for development
+
+## Building and running
+
+The Dockerfile may provide some hints as to what is needed to compile this project.
