@@ -12,20 +12,12 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04-arm
-            distro: bullseye
-            target: rpi
-
-          - os: ubuntu-24.04-arm
             distro: bookworm
             target: rpi
 
           - os: ubuntu-24.04-arm
             distro: trixie
             target: rpi
-
-          - os: ubuntu-24.04-arm
-            distro: bullseye
-            target: rpi64
 
           - os: ubuntu-24.04-arm
             distro: bookworm
@@ -43,9 +35,6 @@ jobs:
         with:
           repository: matchaxnb/moonlight-embedded-packaging
           ref: master
-
-      - name: Get raspberrypi-utils repo
-        run: git clone https://github.com/raspberrypi/utils.git --depth=1 rpi-utils
 
       - name: Build Package
         env:
