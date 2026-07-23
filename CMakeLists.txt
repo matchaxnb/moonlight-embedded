@@ -100,7 +100,13 @@ if (HAVE_GETAUXVAL)
   list(APPEND MOONLIGHT_DEFINITIONS HAVE_GETAUXVAL)
 endif()
 
-check_c_source_compiles("int main(void) { return __builtin_cpu_supports(\"aes\"); }" HAVE_BICS_AES)
+check_c_source_compiles("
+#if defined(__has_builtin) && __has_builtin(__builtin_cpu_supports)
+int main(void) { return __builtin_cpu_supports(\"aes\"); }
+#else
+#error \"__builtin_cpu_supports not available\"
+#endif
+" HAVE_BICS_AES)
 if (HAVE_BICS_AES)
   list(APPEND MOONLIGHT_DEFINITIONS HAVE_BICS_AES)
 endif()
