@@ -44,6 +44,9 @@ jobs:
           repository: matchaxnb/moonlight-embedded-packaging
           ref: master
 
+      - name: Get raspberrypi-utils repo
+        run: git clone https://github.com/raspberrypi/utils.git --depth=1 rpi-utils
+
       - name: Build Package
         env:
           REPO_NAME: ${{ github.event.pull_request.head.repo.clone_url || github.event.repository.clone_url }}
