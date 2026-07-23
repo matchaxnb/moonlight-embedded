@@ -41,7 +41,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
         with:
-          repository: matchalunatic/moonlight-embedded-packaging
+          repository: matchaxnb/moonlight-embedded-packaging
           ref: master
 
       - name: Build Package
