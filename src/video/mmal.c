@@ -31,6 +31,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "video.h"
 
+#ifdef DEPRECATE_VCORE
+#warning "deprecated VideoCore MMAL backend. will be removed"
+#endif
+
 #include <Limelight.h>
 
 #include <sps.h>

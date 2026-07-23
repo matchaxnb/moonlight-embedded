@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.6)
-project(moonlight-embedded VERSION 2.7.1 LANGUAGES C)
+
+execute_process(
+  COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/version.sh"
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE ME_VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT ME_VERSION)
+  set(ME_VERSION "0.0.0")
+endif()
+project(moonlight-embedded VERSION ${ME_VERSION} LANGUAGES C)
+
 SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 SET(CMAKE_C_STANDARD 99)
 include(${CMAKE_ROOT}/Modules/GNUInstallDirs.cmake)
@@ -28,6 +40,10 @@ option(ENABLE_FFMPEG "Compile FFMPEG support" ON)
 option(ENABLE_X11 "Compile X11 support (requires ENABLE_FFMPEG)" ON)
 option(ENABLE_CEC "Compile CEC support" ON)
 option(ENABLE_PULSE "Compile PulseAudio support" ON)
+option(DEPRECATE_VCORE "Show deprecation warnings for VideoCore MMAL/OMX/IL backends" OFF)
+if (DEPRECATE_VCORE)
+  list(APPEND MOONLIGHT_DEFINITIONS DEPRECATE_VCORE)
+endif()
 
 pkg_check_modules(EVDEV REQUIRED libevdev)
 pkg_check_modules(UDEV REQUIRED libudev)

@@ -20,6 +20,22 @@ Bugs can be reported to the [issue tracker](https://github.com/moonlight-stream/
 
 [Moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c) is the shared codebase between different Moonlight implementations
 
+## Release Model
+
+Releases are composed by merging feature branches into a release branch.
+Feature branches start from `master` and each carries a single, focused change.
+Source changes and packaging changes are kept in separate commits to make
+individual features easy to upstream.
+
+```sh
+git checkout -b release/my-flavor
+git merge --no-ff feature/fix-config feature/deprecate-vcore ...
+git tag -a vX.Y.Z -m "Release my-flavor"
+```
+
+Release flavors can include different subsets of features, and the version is
+automatically derived from the nearest tag plus the commit count.
+
 ## Contribute
 
 1. Fork us
