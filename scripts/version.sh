@@ -12,7 +12,8 @@ fi
 
 # git describe --long: v2.7.1-3-gabc1234 → 2.7.1.3 (commits-since-tag as tweak)
 # On a tag: v2.7.1-0-gabc1234 → 2.7.1.0
-DESC=$(git describe --tags --long --match 'v*' 2>/dev/null | sed -E 's/^v//;s/-([0-9]+)-.*/.\1/' || true)
+# Exclude pre-release tags and non-version tags
+DESC=$(git describe --tags --long --match 'v[12].[0-9]*.[0-9]*' --exclude '*-pre*' 2>/dev/null | sed -E 's/^v//;s/-([0-9]+)-.*/.\1/' || true)
 if [ -n "$DESC" ]; then
   echo "$DESC"
   exit 0
