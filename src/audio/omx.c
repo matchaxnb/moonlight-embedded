@@ -26,7 +26,9 @@
 #include <opus_multistream.h>
 #include "bcm_host.h"
 #include "ilclient.h"
+#ifdef DEPRECATE_VCORE
 #warning "deprecated VideoCore OMX IL audio backend. will be removed"
+#endif
 
 static OpusMSDecoder* decoder;
 ILCLIENT_T* handle;

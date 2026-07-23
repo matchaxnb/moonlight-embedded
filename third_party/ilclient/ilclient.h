@@ -47,7 +47,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "IL/OMX_Broadcom.h"
 #include "interface/vcos/vcos.h"
+#ifdef DEPRECATE_VCORE
 #warning "deprecated VideoCore ilclient. will be removed"
+#endif
 
 /**
  * The <DFN>ILCLIENT_T</DFN> structure encapsulates the state needed for the IL
