@@ -28,13 +28,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Video decode on Raspberry Pi using MMAL
 // Based upon example code from the Raspberry Pi
-//
-// DEPRECATED: depends on proprietary VideoCore MMAL. Will be removed.
 
 #include "video.h"
-#ifdef DEPRECATE_VCORE
-#warning "deprecated VideoCore MMAL backend. will be removed"
-#endif
 
 #include <Limelight.h>
 

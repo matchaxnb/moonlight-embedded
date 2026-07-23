@@ -1,5 +1,3 @@
-# DEPRECATED: proprietary VideoCore OMX IL. Will be removed.
-
 find_path(BROADCOM_INCLUDE_DIR
   NAMES bcm_host.h
   DOC "Broadcom include directory"

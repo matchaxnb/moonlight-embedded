@@ -27,13 +27,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Video decode on Raspberry Pi using OpenMAX IL though the ilcient helper library
 // Based upon video decode example from the Raspberry Pi firmware
-//
-// DEPRECATED: depends on proprietary VideoCore OMX IL. Will be removed.
 
 #include "video.h"
-#ifdef DEPRECATE_VCORE
-#warning "deprecated VideoCore OMX IL backend. will be removed"
-#endif
 
 #include <Limelight.h>
 

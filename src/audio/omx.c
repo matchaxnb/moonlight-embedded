@@ -17,8 +17,6 @@
  * along with Moonlight; if not, see <http://www.gnu.org/licenses/>.
  */
 
-// DEPRECATED: depends on proprietary VideoCore OMX IL. Will be removed.
-
 #include "audio.h"
 
 #include <stdio.h>
@@ -26,9 +24,6 @@
 #include <opus_multistream.h>
 #include "bcm_host.h"
 #include "ilclient.h"
-#ifdef DEPRECATE_VCORE
-#warning "deprecated VideoCore OMX IL audio backend. will be removed"
-#endif
 
 static OpusMSDecoder* decoder;
 ILCLIENT_T* handle;
