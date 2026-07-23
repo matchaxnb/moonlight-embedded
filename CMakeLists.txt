@@ -61,6 +61,9 @@ endif()
 
 set(VDPAU_ACCEL_FOUND FALSE)
 set(VA_ACCEL_FOUND FALSE)
+# "software" decoding means ffmpeg handles decode and SDL/X11 handles display.
+# On platforms with V4L2 stateful decoders (modern RPi, etc.) ffmpeg can still
+# use hardware acceleration transparently. The name is legacy.
 set(SOFTWARE_FOUND FALSE)
 
 if(AVCODEC_FOUND AND AVUTIL_FOUND)
