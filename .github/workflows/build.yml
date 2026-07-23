@@ -2,8 +2,9 @@ name: Build
 
 on:
   push:
+    branches: [ "master", "release/*", "feature/*" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "feature/*" ]
 
 jobs:
   build:
