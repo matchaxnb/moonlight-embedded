@@ -1,4 +1,5 @@
 FROM ubuntu:26.04 AS build
+ARG MOONLIGHT_CMAKE_ARGS=""
 
 # keep in order
 ENV DEV_PKGS="libopus-dev libexpat1-dev libssl-dev \
@@ -7,14 +8,15 @@ ENV DEV_PKGS="libopus-dev libexpat1-dev libssl-dev \
     libsdl2-dev \
     libx11-dev \
     libvdpau-dev libva-dev libasound2-dev libpulse-dev \
-    libcurl4-openssl-dev libavahi-client-dev"
+    libcurl4-openssl-dev libavahi-client-dev \
+    libswscale-dev libdrm-dev libgbm-dev"
 
 RUN apt-get update \
     && apt-get -y --no-install-recommends install \
         cmake build-essential pkg-config ${DEV_PKGS}
 COPY . /src
 RUN cd /src && mkdir build && cd build \
-    && cmake .. -DCMAKE_INSTALL_PREFIX=/target \
+    && cmake .. -DCMAKE_INSTALL_PREFIX=/target ${MOONLIGHT_CMAKE_ARGS} \
     && make && make install
 
 FROM ubuntu:26.04
