@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.6)
-project(moonlight-embedded VERSION 2.7.1 LANGUAGES C)
+
+execute_process(
+  COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/version.sh"
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE ME_VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT ME_VERSION)
+  set(ME_VERSION "0.0.0")
+endif()
+project(moonlight-embedded VERSION ${ME_VERSION} LANGUAGES C)
+
 SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 SET(CMAKE_C_STANDARD 99)
 include(${CMAKE_ROOT}/Modules/GNUInstallDirs.cmake)
