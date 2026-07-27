@@ -63,6 +63,24 @@ enum platform platform_check(char* name) {
       return MMAL;
   }
   #endif
+  #ifdef HAVE_V4L2_DRM
+  if (std || strcmp(name, "v4l2drm") == 0) {
+    bool has_drm = (access("/dev/dri/card0", F_OK) == 0 ||
+                    access("/dev/dri/card1", F_OK) == 0);
+    if (std) {
+      bool has_bcm = (dlsym(RTLD_DEFAULT, "bcm_host_init") != NULL);
+      bool has_v4l2 = (access("/dev/video10", F_OK) == 0 ||
+                       access("/dev/video11", F_OK) == 0 ||
+                       access("/dev/video18", F_OK) == 0 ||
+                       access("/dev/video19", F_OK) == 0);
+      if (has_v4l2 && has_drm && !has_bcm)
+        return V4L2_DRM;
+    } else {
+      if (has_drm)
+        return V4L2_DRM;
+    }
+  }
+  #endif
   #ifdef HAVE_AML
   if (std || strcmp(name, "aml") == 0) {
     void *handle = dlopen("libmoonlight-aml.so", RTLD_LAZY | RTLD_GLOBAL);
@@ -184,6 +202,10 @@ DECODER_RENDERER_CALLBACKS* platform_get_video(enum platform system) {
   case RK:
     return (PDECODER_RENDERER_CALLBACKS) dlsym(RTLD_DEFAULT, "decoder_callbacks_rk");
   #endif
+  #ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+    return &decoder_callbacks_v4l2drm;
+  #endif
   }
   return NULL;
 }
@@ -195,6 +217,20 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
   #ifdef HAVE_SDL
   case SDL:
     return &audio_callbacks_sdl;
+  #endif
+  #ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+  #ifdef HAVE_PULSE
+    if (audio_pulse_init(audio_device))
+      return &audio_callbacks_pulse;
+  #endif
+  #ifdef HAVE_SDL
+    return &audio_callbacks_sdl;
+  #endif
+  #ifdef HAVE_ALSA
+    return &audio_callbacks_alsa;
+  #endif
+    return NULL;
   #endif
   #ifdef HAVE_PI
   case PI:
@@ -220,13 +256,23 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
 bool platform_prefers_codec(enum platform system, enum codecs codec) {
   switch (codec) {
   case CODEC_H264:
+#ifdef HAVE_V4L2_DRM
+    return (system != V4L2_DRM);
+#else
     return true;
+#endif
   case CODEC_HEVC:
     switch (system) {
     case AML:
     case RK:
     case X11_VAAPI:
     case X11_VDPAU:
+#ifdef HAVE_MMAL
+    case MMAL:
+#endif
+#ifdef HAVE_V4L2_DRM
+    case V4L2_DRM:
+#endif
       return true;
     }
     return false;
@@ -249,6 +295,10 @@ char* platform_name(enum platform system) {
     return "Raspberry Pi (Broadcom)";
   case MMAL:
     return "Raspberry Pi (Broadcom) MMAL";
+#ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+    return "Linux V4L2 M2M + DRM/KMS (Pi 5)";
+#endif
   case IMX:
     return "i.MX6 (MXC Vivante)";
   case AML:

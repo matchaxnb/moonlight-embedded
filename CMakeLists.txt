@@ -28,6 +28,7 @@ option(ENABLE_FFMPEG "Compile FFMPEG support" ON)
 option(ENABLE_X11 "Compile X11 support (requires ENABLE_FFMPEG)" ON)
 option(ENABLE_CEC "Compile CEC support" ON)
 option(ENABLE_PULSE "Compile PulseAudio support" ON)
+option(ENABLE_V4L2_DRM "Compile V4L2 M2M + DRM/KMS support (Pi 5)" OFF)
 
 pkg_check_modules(EVDEV REQUIRED libevdev)
 pkg_check_modules(UDEV REQUIRED libudev)
@@ -46,6 +47,14 @@ if (ENABLE_FFMPEG)
     pkg_check_modules(XLIB x11)
     pkg_check_modules(LIBVA_X11 libva-x11)
   endif()
+
+  if (ENABLE_V4L2_DRM)
+    pkg_check_modules(SWSCALE libswscale)
+    pkg_check_modules(LIBDRM libdrm)
+    pkg_check_modules(GBM gbm)
+    pkg_check_modules(GLES2 glesv2)
+    pkg_check_modules(EGL2 egl)
+  endif()
 endif()
 if (ENABLE_PULSE)
   pkg_check_modules(PULSE libpulse-simple)
@@ -62,6 +71,8 @@ endif()
 set(VDPAU_ACCEL_FOUND FALSE)
 set(VA_ACCEL_FOUND FALSE)
 set(SOFTWARE_FOUND FALSE)
+set(V4L2_DRM_FOUND FALSE)
+set(V4L2_DRM_EGL FALSE)
 
 if(AVCODEC_FOUND AND AVUTIL_FOUND)
   if(EGL_FOUND AND GLES_FOUND AND XLIB_FOUND)
@@ -75,6 +86,13 @@ if(AVCODEC_FOUND AND AVUTIL_FOUND)
   endif()
   if(SDL_FOUND OR X11_FOUND)
     set(SOFTWARE_FOUND TRUE)
+  endif()
+
+  if (ENABLE_V4L2_DRM AND LIBDRM_FOUND AND AVCODEC_FOUND)
+    if (GBM_FOUND AND GLES2_FOUND AND (EGL_FOUND OR EGL2_FOUND))
+      set(V4L2_DRM_EGL TRUE)
+    endif()
+    set(V4L2_DRM_FOUND TRUE)
   endif()
 endif()
 
@@ -162,6 +180,32 @@ if(ROCKCHIP_FOUND)
   install(TARGETS moonlight-rk DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
+if (V4L2_DRM_FOUND)
+  list(APPEND MOONLIGHT_DEFINITIONS HAVE_V4L2_DRM)
+  list(APPEND MOONLIGHT_OPTIONS V4L2_DRM)
+
+  target_sources(moonlight PRIVATE ./src/video/v4l2drm.c)
+  target_include_directories(moonlight PRIVATE
+    ${LIBDRM_INCLUDE_DIRS} ${SWSCALE_INCLUDE_DIRS}
+    ${AVCODEC_INCLUDE_DIRS} ${AVUTIL_INCLUDE_DIRS})
+  target_link_libraries(moonlight
+    ${LIBDRM_LIBRARIES} ${SWSCALE_LIBRARIES}
+    ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+
+  if (V4L2_DRM_EGL)
+    list(APPEND MOONLIGHT_DEFINITIONS HAVE_EGL)
+    target_include_directories(moonlight PRIVATE
+      ${GBM_INCLUDE_DIRS} ${GLES2_INCLUDE_DIRS} ${EGL_INCLUDE_DIRS})
+    target_link_libraries(moonlight
+      ${GBM_LIBRARIES} ${GLES2_LIBRARIES} ${EGL_LIBRARIES} ${EGL2_LIBRARIES})
+  endif()
+
+  if (NOT SOFTWARE_FOUND)
+    target_sources(moonlight PRIVATE ./src/video/ffmpeg.c)
+    target_link_libraries(moonlight ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+  endif()
+endif()
+
 if (SOFTWARE_FOUND)
   target_sources(moonlight PRIVATE ./src/video/ffmpeg.c)
   target_include_directories(moonlight PRIVATE ${AVCODEC_INCLUDE_DIRS} ${AVUTIL_INCLUDE_DIRS})
@@ -211,12 +255,12 @@ if (PULSE_FOUND)
   target_link_libraries(moonlight ${PULSE_LIBRARIES})
 endif()
 
-if (AMLOGIC_FOUND OR BROADCOM-OMX_FOUND OR MMAL_FOUND OR FREESCALE_FOUND OR ROCKCHIP_FOUND OR X11_FOUND)
+if (AMLOGIC_FOUND OR BROADCOM-OMX_FOUND OR MMAL_FOUND OR FREESCALE_FOUND OR ROCKCHIP_FOUND OR X11_FOUND OR V4L2_DRM_FOUND)
   list(APPEND MOONLIGHT_DEFINITIONS HAVE_EMBEDDED)
   list(APPEND MOONLIGHT_OPTIONS EMBEDDED)
 endif()
 
-if(NOT AMLOGIC_FOUND AND NOT BROADCOM-OMX_FOUND AND NOT MMAL_FOUND AND NOT FREESCALE_FOUND AND NOT ROCKCHIP_FOUND AND NOT SOFTWARE_FOUND)
+if(NOT AMLOGIC_FOUND AND NOT BROADCOM-OMX_FOUND AND NOT MMAL_FOUND AND NOT FREESCALE_FOUND AND NOT ROCKCHIP_FOUND AND NOT SOFTWARE_FOUND AND NOT V4L2_DRM_FOUND)
   message(FATAL_ERROR "No video output available")
 endif()
 

@@ -26,6 +26,12 @@
 #include <Limelight.h>
 #include <libavcodec/avcodec.h>
 
+#ifdef HAVE_V4L2_DRM
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_drm.h>
+#include <unistd.h>
+#endif
+
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -39,11 +45,64 @@ static AVFrame** dec_frames;
 static int dec_frames_cnt;
 static int current_frame, next_frame;
 
+#ifdef HAVE_V4L2_DRM
+static AVBufferRef* hw_device_ctx;
+
+enum AVPixelFormat (*ffmpeg_get_format_cb)(AVCodecContext*,
+    const enum AVPixelFormat*) = NULL;
+
+static enum AVPixelFormat drm_hwaccel_get_format(AVCodecContext* ctx,
+    const enum AVPixelFormat* fmts) {
+  if (ffmpeg_get_format_cb)
+    return ffmpeg_get_format_cb(ctx, fmts);
+
+  for (const enum AVPixelFormat* p = fmts; *p != AV_PIX_FMT_NONE; p++)
+    if (*p == AV_PIX_FMT_DRM_PRIME) return *p;
+
+  return fmts[0];
+}
+
+static int try_init_drm_hwaccel(AVCodecContext* ctx) {
+  const char* drm_devs[] = {
+    "/dev/dri/renderD128", "/dev/dri/card0",
+    "/dev/dri/card1", NULL
+  };
+
+  for (int i = 0; drm_devs[i]; i++) {
+    if (access(drm_devs[i], F_OK) != 0) continue;
+
+    int ret = av_hwdevice_ctx_create(&hw_device_ctx,
+        AV_HWDEVICE_TYPE_DRM, drm_devs[i], NULL, 0);
+    if (ret == 0) {
+      ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+      ctx->get_format = drm_hwaccel_get_format;
+      printf("FFmpeg: DRM hwaccel on %s\n", drm_devs[i]);
+      return 0;
+    }
+  }
+
+  int ret = av_hwdevice_ctx_create(&hw_device_ctx,
+      AV_HWDEVICE_TYPE_DRM, NULL, NULL, 0);
+  if (ret == 0) {
+    ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+    ctx->get_format = drm_hwaccel_get_format;
+    printf("FFmpeg: DRM hwaccel via auto-detection\n");
+    return 0;
+  }
+
+  fprintf(stderr, "FFmpeg: DRM hwaccel unavailable\n");
+  return -1;
+}
+#endif
+
 enum decoders ffmpeg_decoder;
 
 #define BYTES_PER_PIXEL 4
 
 int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer_count, int thread_count) {
+  const AVCodec* candidate;
+  AVCodecContext* ctx;
+
   av_log_set_level(AV_LOG_WARNING);
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58,10,100)
   avcodec_register_all();
@@ -79,6 +138,10 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
     {"hevc_nvv4l2", false},
     {"hevc_nvmpi", false},
     {"hevc_omx", false},
+#ifdef HAVE_V4L2_DRM
+    {"hevc_v4l2request", false},
+    {"hevc", true},
+#endif
     {"hevc", false},
     {NULL, false},
   };
@@ -103,7 +166,7 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
   }
 
   for (const struct decoder_entry* e = decoders; e->name; e++) {
-    if (ffmpeg_decoder == VAAPI)
+    if (ffmpeg_decoder == VAAPI && !e->hwaccel)
       continue;
 
     const AVCodec* candidate = avcodec_find_decoder_by_name(e->name);
@@ -135,9 +198,24 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
       vaapi_init(ctx);
 #endif
 
+#ifdef HAVE_V4L2_DRM
+    if (e->hwaccel) {
+      if (try_init_drm_hwaccel(ctx) < 0) {
+        avcodec_free_context(&ctx);
+        continue;
+      }
+    }
+#endif
+
     int err = avcodec_open2(ctx, candidate, NULL);
     if (err < 0) {
       printf("Couldn't open codec: %s\n", candidate->name);
+#ifdef HAVE_V4L2_DRM
+      if (e->hwaccel && hw_device_ctx) {
+        av_buffer_unref(&hw_device_ctx);
+        hw_device_ctx = NULL;
+      }
+#endif
       avcodec_free_context(&ctx);
       continue;
     }
@@ -176,6 +254,13 @@ void ffmpeg_destroy(void) {
   if (decoder_ctx) {
     avcodec_free_context(&decoder_ctx);
   }
+#ifdef HAVE_V4L2_DRM
+  if (hw_device_ctx) {
+    av_buffer_unref(&hw_device_ctx);
+    hw_device_ctx = NULL;
+  }
+  ffmpeg_get_format_cb = NULL;
+#endif
   if (dec_frames) {
     for (int i = 0; i < dec_frames_cnt; i++) {
       if (dec_frames[i])

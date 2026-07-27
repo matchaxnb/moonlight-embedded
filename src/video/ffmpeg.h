@@ -30,6 +30,11 @@
 enum decoders {SOFTWARE, VDPAU, VAAPI};
 extern enum decoders ffmpeg_decoder;
 
+#ifdef HAVE_V4L2_DRM
+extern enum AVPixelFormat (*ffmpeg_get_format_cb)(AVCodecContext*,
+    const enum AVPixelFormat*);
+#endif
+
 int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer_count, int thread_count);
 void ffmpeg_destroy(void);
 
