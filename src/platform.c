@@ -26,6 +26,10 @@
 #include "audio/audio.h"
 #include "video/video.h"
 
+#ifdef HAVE_VAAPI
+#include "video/ffmpeg_vaapi.h"
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -119,6 +123,8 @@ void platform_start(enum platform system) {
     write_bool("/sys/class/graphics/fb0/blank", true);
     break;
   #endif
+  default:
+    break;
   }
 }
 
@@ -135,6 +141,8 @@ void platform_stop(enum platform system) {
     write_bool("/sys/class/graphics/fb0/blank", false);
     break;
   #endif
+  default:
+    break;
   }
 }
 
@@ -212,7 +220,6 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
 bool platform_prefers_codec(enum platform system, enum codecs codec) {
   switch (codec) {
   case CODEC_H264:
-    // H.264 is always supported
     return true;
   case CODEC_HEVC:
     switch (system) {
@@ -224,7 +231,14 @@ bool platform_prefers_codec(enum platform system, enum codecs codec) {
     }
     return false;
   case CODEC_AV1:
-    return false;
+    switch (system) {
+#ifdef HAVE_VAAPI
+    case X11_VAAPI:
+      return vaapi_has_av1();
+#endif
+    default:
+      return false;
+    }
   }
   return false;
 }
