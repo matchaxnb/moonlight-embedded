@@ -33,12 +33,31 @@ static short* pcmBuffer;
 static int samplesPerFrame;
 static int channelCount;
 
+#ifdef WITH_PA_ALSA_NAME_NORMALIZATION
+/*
+ * Normalize device names: ALSA-style names (default, hw:x,y, plughw:...)
+ * are not valid PulseAudio sink names; map them to NULL so PA uses its
+ * default sink.
+ */
+static const char* pa_device_name(const char* device) {
+  if (!device) return NULL;
+  if (strcmp(device, "default") == 0) return NULL;
+  if (strncmp(device, "hw:", 3) == 0) return NULL;
+  if (strncmp(device, "plughw:", 7) == 0) return NULL;
+  return device;
+}
+#endif
+
 bool audio_pulse_init(char* audio_device) {
   pa_sample_spec spec = {
     .format = PA_SAMPLE_S16LE,
     .rate = 48000,
     .channels = 2
   };
+
+#ifdef WITH_PA_ALSA_NAME_NORMALIZATION
+  audio_device = (char*)pa_device_name(audio_device);
+#endif
 
   int error;
   dev = pa_simple_new(NULL, "Moonlight Embedded", PA_STREAM_PLAYBACK, audio_device, "Streaming", &spec, NULL, NULL, &error);
@@ -72,6 +91,7 @@ static int pulse_renderer_init(int audioConfiguration, POPUS_MULTISTREAM_CONFIGU
   }
 
   decoder = opus_multistream_decoder_create(opusConfig->sampleRate, opusConfig->channelCount, opusConfig->streams, opusConfig->coupledStreams, alsaMapping, &rc);
+  if (!decoder) { printf("Pulseaudio error: opus_multistream_decoder_create failed: %d\n", rc); return -1; }
 
   pa_sample_spec spec = {
     .format = PA_SAMPLE_S16LE,
@@ -82,7 +102,10 @@ static int pulse_renderer_init(int audioConfiguration, POPUS_MULTISTREAM_CONFIGU
   pa_channel_map map;
   pa_channel_map_init_auto(&map, opusConfig->channelCount, PA_CHANNEL_MAP_ALSA);
 
-  char* audio_device = (char*) context;
+  const char* audio_device = (char*) context;
+#ifdef WITH_PA_ALSA_NAME_NORMALIZATION
+  audio_device = pa_device_name(audio_device);
+#endif
   dev = pa_simple_new(NULL, "Moonlight Embedded", PA_STREAM_PLAYBACK, audio_device, "Streaming", &spec, &map, NULL, &error);
 
   if (!dev) {
