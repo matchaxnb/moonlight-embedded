@@ -81,15 +81,33 @@ static void output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf) {
   }
 }
 
+#ifdef WITH_MMAL_HEVC
+static int current_video_format = 0;
+#endif
+
 static int decoder_renderer_setup(int videoFormat, int width, int height, int redrawRate, void* context, int drFlags) {
+#ifdef WITH_MMAL_HEVC
+  if (!(videoFormat & VIDEO_FORMAT_MASK_H264) &&
+      !(videoFormat & VIDEO_FORMAT_MASK_H265)) {
+    fprintf(stderr, "Video format not supported\n");
+    return -1;
+  }
+  current_video_format = videoFormat;
+#else
   if (videoFormat != VIDEO_FORMAT_H264) {
     fprintf(stderr, "Video format not supported\n");
     return -1;
   }
+#endif
 
   bcm_host_init();
   mmal_vc_init();
+#ifdef WITH_MMAL_HEVC
+  if (videoFormat & VIDEO_FORMAT_MASK_H264)
+    gs_sps_init(width, height);
+#else
   gs_sps_init(width, height);
+#endif
 
   vcos_semaphore_create(&semaphore, "video_decoder", 1);
   if (mmal_component_create(MMAL_COMPONENT_DEFAULT_VIDEO_DECODER, &decoder) != MMAL_SUCCESS) {
@@ -99,7 +117,13 @@ static int decoder_renderer_setup(int videoFormat, int width, int height, int re
 
   MMAL_ES_FORMAT_T *format_in = decoder->input[0]->format;
   format_in->type = MMAL_ES_TYPE_VIDEO;
+#ifdef WITH_MMAL_HEVC
+  format_in->encoding = (videoFormat & VIDEO_FORMAT_MASK_H265)
+                         ? MMAL_ENCODING_H265
+                         : MMAL_ENCODING_H264;
+#else
   format_in->encoding = MMAL_ENCODING_H264;
+#endif
   format_in->es->video.width = ALIGN(width, 32);
   format_in->es->video.height = ALIGN(height, 16);
   format_in->es->video.crop.width = width;
@@ -256,9 +280,16 @@ static int decoder_renderer_submit_decode_unit(PDECODE_UNIT decodeUnit) {
       first_entry = true;
     }
 
+#ifdef WITH_MMAL_HEVC
+    if (entry->bufferType == BUFFER_TYPE_SPS &&
+        (current_video_format & VIDEO_FORMAT_MASK_H264)) {
+      gs_sps_fix(entry, GS_SPS_BITSTREAM_FIXUP, buf->data, &buf->length);
+    } else {
+#else
     if (entry->bufferType == BUFFER_TYPE_SPS)
       gs_sps_fix(entry, GS_SPS_BITSTREAM_FIXUP, buf->data, &buf->length);
     else {
+#endif
       if (entry->length + buf->length > buf->alloc_size) {
         fprintf(stderr, "Video decoder buffer too small\n");
         mmal_buffer_header_release(buf);
@@ -295,3 +326,13 @@ DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal = {
   .submitDecodeUnit = decoder_renderer_submit_decode_unit,
   .capabilities = CAPABILITY_DIRECT_SUBMIT,
 };
+
+#ifdef WITH_MMAL_HEVC
+DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal_hevc = {
+  .setup = decoder_renderer_setup,
+  .cleanup = decoder_renderer_cleanup,
+  .submitDecodeUnit = decoder_renderer_submit_decode_unit,
+  .capabilities = CAPABILITY_DIRECT_SUBMIT |
+                  CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC,
+};
+#endif

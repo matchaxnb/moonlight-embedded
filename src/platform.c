@@ -220,6 +220,9 @@ bool platform_prefers_codec(enum platform system, enum codecs codec) {
     case RK:
     case X11_VAAPI:
     case X11_VDPAU:
+#ifdef HAVE_MMAL
+    case MMAL:
+#endif
       return true;
     }
     return false;

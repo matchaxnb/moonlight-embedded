@@ -48,3 +48,9 @@ extern DECODER_RENDERER_CALLBACKS decoder_callbacks_x11_vdpau;
 #ifdef HAVE_SDL
 extern DECODER_RENDERER_CALLBACKS decoder_callbacks_sdl;
 #endif
+#ifdef HAVE_MMAL
+extern DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal;
+#ifdef WITH_MMAL_HEVC
+extern DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal_hevc;
+#endif
+#endif
