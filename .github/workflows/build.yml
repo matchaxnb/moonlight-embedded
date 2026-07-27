@@ -12,9 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04-arm
-            distro: bullseye
-            target: rpi
 
           - os: ubuntu-24.04-arm
             distro: bookworm
@@ -23,10 +20,6 @@ jobs:
           - os: ubuntu-24.04-arm
             distro: trixie
             target: rpi
-
-          - os: ubuntu-24.04-arm
-            distro: bullseye
-            target: rpi64
 
           - os: ubuntu-24.04-arm
             distro: bookworm
