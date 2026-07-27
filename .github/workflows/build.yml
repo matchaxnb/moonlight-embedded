@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  tags:
   push:
     branches: [ "master", "release/*", "feature/*" ]
   pull_request:
