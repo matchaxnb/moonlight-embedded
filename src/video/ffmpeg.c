@@ -26,12 +26,17 @@
 #include <Limelight.h>
 #include <libavcodec/avcodec.h>
 
+#ifdef HAVE_V4L2_DRM
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_drm.h>
+#include <unistd.h>
+#endif
+
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdbool.h>
 
-// General decoder and renderer state
 static AVPacket* pkt;
 static const AVCodec* decoder;
 static AVCodecContext* decoder_ctx;
@@ -40,15 +45,65 @@ static AVFrame** dec_frames;
 static int dec_frames_cnt;
 static int current_frame, next_frame;
 
+#ifdef HAVE_V4L2_DRM
+static AVBufferRef* hw_device_ctx;
+
+enum AVPixelFormat (*ffmpeg_get_format_cb)(AVCodecContext*,
+    const enum AVPixelFormat*) = NULL;
+
+static enum AVPixelFormat drm_hwaccel_get_format(AVCodecContext* ctx,
+    const enum AVPixelFormat* fmts) {
+  if (ffmpeg_get_format_cb)
+    return ffmpeg_get_format_cb(ctx, fmts);
+
+  for (const enum AVPixelFormat* p = fmts; *p != AV_PIX_FMT_NONE; p++)
+    if (*p == AV_PIX_FMT_DRM_PRIME) return *p;
+
+  return fmts[0];
+}
+
+static int try_init_drm_hwaccel(AVCodecContext* ctx) {
+  const char* drm_devs[] = {
+    "/dev/dri/renderD128", "/dev/dri/card0",
+    "/dev/dri/card1", NULL
+  };
+
+  for (int i = 0; drm_devs[i]; i++) {
+    if (access(drm_devs[i], F_OK) != 0) continue;
+
+    int ret = av_hwdevice_ctx_create(&hw_device_ctx,
+        AV_HWDEVICE_TYPE_DRM, drm_devs[i], NULL, 0);
+    if (ret == 0) {
+      ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+      ctx->get_format = drm_hwaccel_get_format;
+      printf("FFmpeg: DRM hwaccel on %s\n", drm_devs[i]);
+      return 0;
+    }
+  }
+
+  int ret = av_hwdevice_ctx_create(&hw_device_ctx,
+      AV_HWDEVICE_TYPE_DRM, NULL, NULL, 0);
+  if (ret == 0) {
+    ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+    ctx->get_format = drm_hwaccel_get_format;
+    printf("FFmpeg: DRM hwaccel via auto-detection\n");
+    return 0;
+  }
+
+  fprintf(stderr, "FFmpeg: DRM hwaccel unavailable\n");
+  return -1;
+}
+#endif
+
 enum decoders ffmpeg_decoder;
 
 #define BYTES_PER_PIXEL 4
 
-// This function must be called before
-// any other decoding functions
 int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer_count, int thread_count) {
-  // Initialize the avcodec library and register codecs
-  av_log_set_level(AV_LOG_QUIET);
+  const AVCodec* candidate;
+  AVCodecContext* ctx;
+
+  av_log_set_level(AV_LOG_WARNING);
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58,10,100)
   avcodec_register_all();
 #endif
@@ -61,71 +116,112 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
 
   ffmpeg_decoder = perf_lvl & VAAPI_ACCELERATION ? VAAPI : SOFTWARE;
 
-  for (int try = 0; try < 6; try++) {
-    if (videoFormat & VIDEO_FORMAT_MASK_H264) {
-      if (ffmpeg_decoder == SOFTWARE) {
-        if (try == 0) decoder = avcodec_find_decoder_by_name("h264_nvv4l2"); // Tegra
-        if (try == 1) decoder = avcodec_find_decoder_by_name("h264_nvmpi"); // Tegra
-        if (try == 2) decoder = avcodec_find_decoder_by_name("h264_omx"); // VisionFive
-        if (try == 3) decoder = avcodec_find_decoder_by_name("h264_v4l2m2m"); // Stateful V4L2
-      }
-      if (try == 4) decoder = avcodec_find_decoder_by_name("h264"); // Software and hwaccel
-    } else if (videoFormat & VIDEO_FORMAT_MASK_H265) {
-      if (ffmpeg_decoder == SOFTWARE) {
-        if (try == 0) decoder = avcodec_find_decoder_by_name("hevc_nvv4l2"); // Tegra
-        if (try == 1) decoder = avcodec_find_decoder_by_name("hevc_nvmpi"); // Tegra
-        if (try == 2) decoder = avcodec_find_decoder_by_name("hevc_omx"); // VisionFive
-        if (try == 3) decoder = avcodec_find_decoder_by_name("hevc_v4l2m2m"); // Stateful V4L2
-      }
-      if (try == 4) decoder = avcodec_find_decoder_by_name("hevc"); // Software and hwaccel
-    } else if (videoFormat & VIDEO_FORMAT_MASK_AV1) {
-      if (ffmpeg_decoder == SOFTWARE) {
-        if (try == 0) decoder = avcodec_find_decoder_by_name("libdav1d");
-      }
-      if (try == 1) decoder = avcodec_find_decoder_by_name("av1"); // Hwaccel
-    } else {
-      printf("Video format not supported\n");
-      return -1;
-    }
+  struct decoder_entry {
+    const char* name;
+    bool hwaccel;
+  };
 
-    // Skip this decoder if it isn't compiled into FFmpeg
-    if (!decoder) {
+  decoder = NULL;
+  decoder_ctx = NULL;
+
+  const struct decoder_entry h264_decoders[] = {
+    {"h264_v4l2m2m", false},
+    {"h264_nvv4l2", false},
+    {"h264_nvmpi", false},
+    {"h264_omx", false},
+    {"h264", false},
+    {NULL, false},
+  };
+
+  const struct decoder_entry hevc_decoders[] = {
+    {"hevc_v4l2m2m", false},
+    {"hevc_nvv4l2", false},
+    {"hevc_nvmpi", false},
+    {"hevc_omx", false},
+#ifdef HAVE_V4L2_DRM
+    {"hevc_v4l2request", false},
+    {"hevc", true},
+#endif
+    {"hevc", false},
+    {NULL, false},
+  };
+
+  const struct decoder_entry av1_decoders[] = {
+    {"libdav1d", false},
+    {"av1", false},
+    {NULL, false},
+  };
+
+  const struct decoder_entry* decoders = NULL;
+
+  if (videoFormat & VIDEO_FORMAT_MASK_H264)
+    decoders = h264_decoders;
+  else if (videoFormat & VIDEO_FORMAT_MASK_H265)
+    decoders = hevc_decoders;
+  else if (videoFormat & VIDEO_FORMAT_MASK_AV1)
+    decoders = av1_decoders;
+  else {
+    printf("Video format not supported\n");
+    return -1;
+  }
+
+  for (const struct decoder_entry* e = decoders; e->name; e++) {
+    if (ffmpeg_decoder == VAAPI && !e->hwaccel)
       continue;
-    }
 
-    decoder_ctx = avcodec_alloc_context3(decoder);
-    if (decoder_ctx == NULL) {
+    const AVCodec* candidate = avcodec_find_decoder_by_name(e->name);
+    if (!candidate) continue;
+
+    AVCodecContext* ctx = avcodec_alloc_context3(candidate);
+    if (ctx == NULL) {
       printf("Couldn't allocate context\n");
       return -1;
     }
 
-    // Use low delay decoding
-    decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
-
-    // Allow display of corrupt frames and frames missing references
-    decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
-    decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
-
-    // Report decoding errors to allow us to request a key frame
-    decoder_ctx->err_recognition = AV_EF_EXPLODE;
+    ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+    ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+    ctx->err_recognition = AV_EF_EXPLODE;
+    ctx->width = width;
+    ctx->height = height;
+    ctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     if (perf_lvl & SLICE_THREADING) {
-      decoder_ctx->thread_type = FF_THREAD_SLICE;
-      decoder_ctx->thread_count = thread_count;
+      ctx->thread_type = FF_THREAD_SLICE;
+      ctx->thread_count = thread_count;
     } else {
-      decoder_ctx->thread_count = 1;
+      ctx->thread_count = 1;
     }
 
-    decoder_ctx->width = width;
-    decoder_ctx->height = height;
-    decoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+#ifdef HAVE_VAAPI
+    if (ffmpeg_decoder == VAAPI)
+      vaapi_init(ctx);
+#endif
 
-    int err = avcodec_open2(decoder_ctx, decoder, NULL);
+#ifdef HAVE_V4L2_DRM
+    if (e->hwaccel) {
+      if (try_init_drm_hwaccel(ctx) < 0) {
+        avcodec_free_context(&ctx);
+        continue;
+      }
+    }
+#endif
+
+    int err = avcodec_open2(ctx, candidate, NULL);
     if (err < 0) {
-      printf("Couldn't open codec: %s\n", decoder->name);
-      avcodec_free_context(&decoder_ctx);
+      printf("Couldn't open codec: %s\n", candidate->name);
+#ifdef HAVE_V4L2_DRM
+      if (e->hwaccel && hw_device_ctx) {
+        av_buffer_unref(&hw_device_ctx);
+        hw_device_ctx = NULL;
+      }
+#endif
+      avcodec_free_context(&ctx);
       continue;
     }
+
+    decoder = candidate;
+    decoder_ctx = ctx;
   }
 
   if (decoder == NULL) {
@@ -136,7 +232,7 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
   printf("Using FFmpeg decoder: %s\n", decoder->name);
 
   dec_frames_cnt = buffer_count;
-  dec_frames = malloc(buffer_count * sizeof(AVFrame*));
+  dec_frames = calloc(buffer_count, sizeof(AVFrame*));
   if (dec_frames == NULL) {
     fprintf(stderr, "Couldn't allocate frames");
     return -1;
@@ -150,26 +246,28 @@ int ffmpeg_init(int videoFormat, int width, int height, int perf_lvl, int buffer
     }
   }
 
-  #ifdef HAVE_VAAPI
-  if (ffmpeg_decoder == VAAPI)
-    vaapi_init(decoder_ctx);
-  #endif
-
   return 0;
 }
 
-// This function must be called after
-// decoding is finished
 void ffmpeg_destroy(void) {
   av_packet_free(&pkt);
   if (decoder_ctx) {
     avcodec_free_context(&decoder_ctx);
   }
+#ifdef HAVE_V4L2_DRM
+  if (hw_device_ctx) {
+    av_buffer_unref(&hw_device_ctx);
+    hw_device_ctx = NULL;
+  }
+  ffmpeg_get_format_cb = NULL;
+#endif
   if (dec_frames) {
     for (int i = 0; i < dec_frames_cnt; i++) {
       if (dec_frames[i])
         av_frame_free(&dec_frames[i]);
     }
+    free(dec_frames);
+    dec_frames = NULL;
   }
 }
 
@@ -189,8 +287,6 @@ AVFrame* ffmpeg_get_frame(bool native_frame) {
   return NULL;
 }
 
-// packets must be decoded in order
-// indata must be inlen + AV_INPUT_BUFFER_PADDING_SIZE in length
 int ffmpeg_decode(unsigned char* indata, int inlen) {
   int err;
 

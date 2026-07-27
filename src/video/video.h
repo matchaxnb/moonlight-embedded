@@ -54,3 +54,6 @@ extern DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal;
 extern DECODER_RENDERER_CALLBACKS decoder_callbacks_mmal_hevc;
 #endif
 #endif
+#ifdef HAVE_V4L2_DRM
+extern DECODER_RENDERER_CALLBACKS decoder_callbacks_v4l2drm;
+#endif

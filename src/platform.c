@@ -26,6 +26,10 @@
 #include "audio/audio.h"
 #include "video/video.h"
 
+#ifdef HAVE_VAAPI
+#include "video/ffmpeg_vaapi.h"
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -57,6 +61,24 @@ enum platform platform_check(char* name) {
     void *handle = dlopen("libmoonlight-mmal.so", RTLD_NOW | RTLD_GLOBAL);
     if (handle != NULL && dlsym(RTLD_DEFAULT, "bcm_host_init") != NULL)
       return MMAL;
+  }
+  #endif
+  #ifdef HAVE_V4L2_DRM
+  if (std || strcmp(name, "v4l2drm") == 0) {
+    bool has_drm = (access("/dev/dri/card0", F_OK) == 0 ||
+                    access("/dev/dri/card1", F_OK) == 0);
+    if (std) {
+      bool has_bcm = (dlsym(RTLD_DEFAULT, "bcm_host_init") != NULL);
+      bool has_v4l2 = (access("/dev/video10", F_OK) == 0 ||
+                       access("/dev/video11", F_OK) == 0 ||
+                       access("/dev/video18", F_OK) == 0 ||
+                       access("/dev/video19", F_OK) == 0);
+      if (has_v4l2 && has_drm && !has_bcm)
+        return V4L2_DRM;
+    } else {
+      if (has_drm)
+        return V4L2_DRM;
+    }
   }
   #endif
   #ifdef HAVE_AML
@@ -119,6 +141,8 @@ void platform_start(enum platform system) {
     write_bool("/sys/class/graphics/fb0/blank", true);
     break;
   #endif
+  default:
+    break;
   }
 }
 
@@ -135,6 +159,8 @@ void platform_stop(enum platform system) {
     write_bool("/sys/class/graphics/fb0/blank", false);
     break;
   #endif
+  default:
+    break;
   }
 }
 
@@ -176,6 +202,10 @@ DECODER_RENDERER_CALLBACKS* platform_get_video(enum platform system) {
   case RK:
     return (PDECODER_RENDERER_CALLBACKS) dlsym(RTLD_DEFAULT, "decoder_callbacks_rk");
   #endif
+  #ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+    return &decoder_callbacks_v4l2drm;
+  #endif
   }
   return NULL;
 }
@@ -187,6 +217,20 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
   #ifdef HAVE_SDL
   case SDL:
     return &audio_callbacks_sdl;
+  #endif
+  #ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+  #ifdef HAVE_PULSE
+    if (audio_pulse_init(audio_device))
+      return &audio_callbacks_pulse;
+  #endif
+  #ifdef HAVE_SDL
+    return &audio_callbacks_sdl;
+  #endif
+  #ifdef HAVE_ALSA
+    return &audio_callbacks_alsa;
+  #endif
+    return NULL;
   #endif
   #ifdef HAVE_PI
   case PI:
@@ -212,8 +256,11 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
 bool platform_prefers_codec(enum platform system, enum codecs codec) {
   switch (codec) {
   case CODEC_H264:
-    // H.264 is always supported
+#ifdef HAVE_V4L2_DRM
+    return (system != V4L2_DRM);
+#else
     return true;
+#endif
   case CODEC_HEVC:
     switch (system) {
     case AML:
@@ -223,11 +270,21 @@ bool platform_prefers_codec(enum platform system, enum codecs codec) {
 #ifdef HAVE_MMAL
     case MMAL:
 #endif
+#ifdef HAVE_V4L2_DRM
+    case V4L2_DRM:
+#endif
       return true;
     }
     return false;
   case CODEC_AV1:
-    return false;
+    switch (system) {
+#ifdef HAVE_VAAPI
+    case X11_VAAPI:
+      return vaapi_has_av1();
+#endif
+    default:
+      return false;
+    }
   }
   return false;
 }
@@ -238,6 +295,10 @@ char* platform_name(enum platform system) {
     return "Raspberry Pi (Broadcom)";
   case MMAL:
     return "Raspberry Pi (Broadcom) MMAL";
+#ifdef HAVE_V4L2_DRM
+  case V4L2_DRM:
+    return "Linux V4L2 M2M + DRM/KMS (Pi 5)";
+#endif
   case IMX:
     return "i.MX6 (MXC Vivante)";
   case AML:

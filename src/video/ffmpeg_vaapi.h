@@ -17,9 +17,23 @@
  * along with Moonlight; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <va/va.h>
+#include <libavcodec/avcodec.h>
 #include <X11/Xlib.h>
+#include <stdbool.h>
 
-int vaapi_init_lib();
+/*
+ * Accepts the Display* opened by x11.c.
+ * Tries DRM render nodes, auto-detection, then falls back to ":0".
+ * Returns 0 on success, -1 if all paths fail.
+ */
+int vaapi_init_lib(Display* display);
+
 int vaapi_init(AVCodecContext* decoder_ctx);
 void vaapi_queue(AVFrame* dec_frame, Window win, int width, int height);
+
+/*
+ * Returns true if the current GPU supports AV1 decoding via VAAPI.
+ * Returns false if vaapi_init_lib() has not been called, or if
+ * VAProfileAV1Profile0 is not in the list of supported profiles.
+ */
+bool vaapi_has_av1(void);
