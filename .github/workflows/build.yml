@@ -1,11 +1,11 @@
 name: Build
 
 on:
-  tag:
   push:
+    tags: ["v*"]      
     branches: [ "master", "feature/*" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "feature/*", "release/*" ]
 
 jobs:
   build:
